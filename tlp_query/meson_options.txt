@@ -1,0 +1,15 @@
+# Meson build options for TLP Query
+option('build_all_tests',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Build all experimental test programs')
+
+option('enable_debug',
+       type: 'boolean',
+       value: false,
+       description: 'Enable debug output and logging')
+
+option('enable_vuid_query',
+       type: 'boolean', 
+       value: true,
+       description: 'Enable VUID query functionality') 
