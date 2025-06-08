@@ -1,0 +1,724 @@
+diff --git a/adabe/EAS_st.adb b/adabe/EAS_st.adb
+index 55fe316fe4..7162fb1186 100644
+--- a/adabe/EAS_st.adb
++++ b/adabe/EAS_st.adb
+@@ -15249,6 +15249,7 @@ Valid only for SET and QUERY from other HCA which is the vport group manager. Dr
+   <field name="encryption_key"                 offset=".0" size="0x1a0.0"  subnode="encryption_key_obj"                 access="RW" descr=""/>
+   <field name="generic_emulation"              offset=".0" size="0xc4.0"   subnode="generic_emulation"                  access="RW" descr="Table 1203 - GENERIC_PCI_DEVICE_EMULATION Object Layout"/>
+   <field name="generic_emu_dev_type_obj"       offset=".0" size="0x140.0"  subnode="generic_emu_dev_type_obj"           access="RW" descr="Table 626 - GENERIC_EMULATION_DEVICE_TYPE Object Format"/>
++  <field name="tlp_emu_channel"                offset=".0" size="0x20.0"   subnode="tlp_emu_channel"                    access="RW" descr="TLP_EMULATION_CHANNEL Object Format"/>
+   <field name="geneve_tlv_option"              offset=".0" size="0x40.0"   subnode="geneve_tlv_option_obj"              access="RW" descr=""/>
+   <field name="vhca_tunnel_object"             offset=".0" size="0x40.0"   subnode="vhca_tunnel_object"                 access="RW" descr=""/>
+   <field name="ipsec_offload_obj"              offset=".0" size="0x80.0"   subnode="ipsec_offload_obj"                  access="RW" descr=""/>
+@@ -21849,6 +21850,14 @@ Valid only for SET and QUERY from other HCA which is the vport group manager. Dr
+ 	 <field name="memory_layout_segment"                                                           offset="0x100.0"         size="0x40.0" subnode="generic_emu_dev_type_obj_memory_layout_segment_auto" low_bound="0"  high_bound="VARIABLE"    descr="Array of segments, describing the layout of the device memory\;For segment_type=VENDOR_CAP and capability_type=VSC Table 630, &quot;Vendor Specific Segment - VSC Format,&quot; on page 898\;For segment_type=VENDOR_CAP and capability_type=VSEC Table 634, &quot;Vendor Specific Segment - VSEC Format,&quot; on page 899\;For segment_type=BAR_REGION and region_type=DOORBELL Table 637, &quot;BAR Segment - Doorbell Format,&quot; on page 900\;For segment_type=BAR_REGION and region_type=MSIX_PENDING/MSIX_VECTOR Table 641, &quot;BAR Segment - MSIX Format,&quot; on page 902\;For segment_type=BAR_REGION and region_type=SW_PCI_CB Table 643, &quot;BAR Segment - SW_PCI_CB Format,&quot; on page 903"/>
+ </node>
+ 
++<node name="tlp_emu_channel" size="0x20.0" >
++   <field name="q_protocol_mode"                                                                 offset="0x0.0"           size="0x1.0"     descr="Protocol mode for messages between IRON FW and ARM SW"/>
++   <field name="q_mkey"                                                                          offset="0x4.0"           size="0x4.0"     descr="Mkey for communication channel queue"/>
++   <field name="q_size"                                                                          offset="0x8.0"           size="0x4.0"     descr="Size of communication channel queue in bytes"/>
++   <field name="q_addr"                                                                          offset="0x10.0"          size="0x8.0" subnode="uint64"     descr="Start virtual address of communication channel queue"/>
++   <field name="tlp_channel_stride_index"                                                        offset="0x18.0"          size="0x2.0"     descr="TLP channel stride index"/>
++</node>
++
+ <node name="bar_region_updates_notifier"	 size="0x4.0" >
+ 	 <field name="region_update"                                                                   offset="0x0.31"          size="0x0.1"     descr="If set, indicates on updates occurred in the associated BAR region. The mechanism for clearing this bit is according to the BAR region_type of the associated BAR region.Read Only field."/>
+ 	 <field name="region_id"                                                                       offset="0x0.0"           size="0x0.16"    descr="BAR region_id as configured during the creation of the associated GENERIC_EMULATION_DEVICE_TYPE object."/>
+diff --git a/adabe/gvmi_fw_context_st.adb b/adabe/gvmi_fw_context_st.adb
+index 747b404713..01feba01f1 100644
+--- a/adabe/gvmi_fw_context_st.adb
++++ b/adabe/gvmi_fw_context_st.adb
+@@ -138,6 +138,7 @@
+   <field name="generic_emu_dev_type_obj_internal" offset=".0" size="0x10.0"   subnode="generic_emu_dev_type_obj_internal"        descr="" />
+   <field name="generic_emu_seg_union"    offset=".0"        size="0x10.0"     subnode="generic_emu_seg_union"       descr="" />
+   <field name="generic_emu_dev_ctx"      offset=".0"        size="0x40.0"     subnode="generic_emu_dev_ctx"         descr="" />
++  <field name="tlp_emu_channel_ctx"      offset=".0"        size="0x30.0"     subnode="tlp_emu_channel_ctx"         descr="TLP emulation channel internal context" />
+   <field name="bp_ctrl"                  offset=".0"        size="0x4.0"      subnode="bp_ctrl"                     descr="" />
+   <field name="diag_data_conf_info"      offset=".0"        size="0x10.0"     subnode="diag_data_conf_info"         inst_if="DEVREVID GREAT_EQ CARMEL_DEVREVID" descr="" />
+   <field name="fw_res_pool_ctx"          offset=".0"        size="0x4.0"      subnode="fw_res_pool_ctx"             inst_if="DEVREVID GREAT_EQ CARMEL_DEVREVID" force_align="0x4.0" descr="A FW resource pool properties." />
+@@ -146,6 +147,16 @@
+   <field name="dword_5"                  offset=".0"        size="0x4.0"      subnode="dword_5"                     descr="DEVREVID GREAT_EQ GILBOA_DEVREVID" />
+ </node>
+ 
++<node name="tlp_emu_channel_ctx" size="0x30.0" >
++  <field name="uid_ref"                     offset="0x0.0"          size="0x8.0"     subnode="uid_ref_count" descr="Reference count and ownership information" />
++  <field name="q_protocol_mode"             offset="0x8.0"          size="0x1.0"     descr="Protocol mode for messages between IRON FW and ARM SW" />
++  <field name="q_mkey"                      offset="0xc.0"          size="0x4.0"     descr="Mkey for communication channel queue" />
++  <field name="q_size"                      offset="0x10.0"         size="0x4.0"     descr="Size of communication channel queue in bytes" />
++  <field name="q_addr"                      offset="0x18.0"         size="0x8.0"     subnode="uint64" descr="Start virtual address of communication channel queue" />
++  <field name="tlp_channel_stride_index"    offset="0x20.0"         size="0x2.0"     descr="TLP channel stride index" />
++  <field name="state"                       offset="0x24.0"         size="0x1.0"     descr="Channel state (0=inactive, 1=active)" />
++</node>
++
+ <node name="dword_4" size="0x4.0">
+   <field name="address"   offset="0x0.0"   size="0x0.30"  descr="" />
+   <field name="syndrome"  offset="0x0.30"  size="0x0.1"   descr="" />
+@@ -4957,6 +4968,7 @@ um"/>
+   <field name="emu_hotplug"     offset=".0"         size="0x10.0"     subnode="cmdif_ctx_emu_hotplug" descr="" />
+   <field name="generic_emu_dev_type" offset=".0"    size="0x20.0"     subnode="cmdif_ctx_special_generic_emu_dev_type" descr="" />
+   <field name="generic_dev_emu" offset=".0"         size="0x20.0"     subnode="cmdif_ctx_special_generic_dev_emu" descr="" />
++  <field name="tlp_emu_channel" offset=".0"         size="0x18.0"     subnode="cmdif_ctx_special_tlp_emu_channel" descr="TLP emulation channel context" />
+   <field name="modify_generic_emu_obj" offset=".0"  size="0x20.0"     subnode="cmdif_ctx_special_modify_generic_emu_obj" descr="" />
+   <field name="uptq"            offset=".0"         size="0x20.0"     subnode="cmdif_ctx_uptq_object" descr="" />
+   <field name="channel_connection" offset=".0"      size="0x20.0"     subnode="cmdif_ctx_channel_connection" descr="" />
+@@ -5035,6 +5047,16 @@ um"/>
+   <field name="subscribed_region_id_arr"          offset="0x10.16"       size="0x10.0"       low_bound="0" high_bound="7" descr="" />
+ </node>
+ 
++<node name="cmdif_ctx_special_tlp_emu_channel" size="0x18.0" >
++  <field name="q_protocol_mode"             offset="0x0.0"         size="0x1.0"        descr="Protocol mode for messages between IRON FW and ARM SW" />
++  <field name="reserved_at_1"               offset="0x1.0"         size="0x1.0"        descr="Reserved field for alignment" />
++  <field name="tlp_channel_stride_index"    offset="0x2.0"         size="0x2.0"        descr="TLP channel stride index" />
++  <field name="q_mkey"                      offset="0x4.0"         size="0x4.0"        descr="Mkey for communication channel queue" />
++  <field name="q_size"                      offset="0x8.0"         size="0x4.0"        descr="Size of communication channel queue in bytes" />
++  <field name="q_addr"                      offset="0xc.0"         size="0x8.0"        subnode="uint64" descr="Start virtual address of communication channel queue" />
++  <field name="reserved_at_14"              offset="0x14.0"        size="0x4.0"        descr="Reserved field for future use" />
++</node>
++
+ <node name="cmdif_ctx_special_modify_generic_emu_obj" size="0x20.0" >
+   <field name="modify_field_select"               offset="0x0.0"         size="0x8.0"        subnode="uint64" descr="" />
+   <field name="pci_hotplug_state"                 offset="0x8.0"         size="0x0.3"        descr="" />
+diff --git a/adabe/scratchpad_st.adb b/adabe/scratchpad_st.adb
+index 68455df5db..1c4ea2dac9 100644
+--- a/adabe/scratchpad_st.adb
++++ b/adabe/scratchpad_st.adb
+@@ -12594,4 +12594,13 @@ descr="0x5f MTT\; 0x01 SQ_QP_LIST_REQ\; 0x02 SQ_QP_LIST_RES\; 0x03 BSF\; 0x04 RD
+ </node>
+ 
+ 
++<node name="tlp_channel_meta" size="0x10.0">
++  <field name="queue_physical_addr"       offset="0x0.0"    size="0x8.0"  subnode="uint64" descr="Queue Physical Address (64 bits)"/>
++  <field name="pi"                        offset="0x8.0"    size="0x0.16" descr="Producer Index (16 bits)"/>
++  <field name="credit"                    offset="0x8.16"   size="0x0.16" descr="Credit (16 bits)"/>
++  <field name="valid"                     offset="0xc.0"    size="0x0.1"  descr="Valid bit (1 bit)"/>
++  <field name="owner_bit_sw"              offset="0xc.1"    size="0x0.1"  descr="Owner Bit SW (1 bit)"/>
++  <field name="reserved"                  offset="0xc.2"    size="0x0.30" descr="Reserved for alignment (30 bits)"/>
++</node>
++
+ </NodesDefinition>
+diff --git a/adabe/scratchpad_top_st.adb b/adabe/scratchpad_top_st.adb
+index e1e2f6de64..9ae99e55cb 100644
+--- a/adabe/scratchpad_top_st.adb
++++ b/adabe/scratchpad_top_st.adb
+@@ -134,6 +134,7 @@
+   <field name="delay_drop"           offset="0xe430.0"   size="0x94.0"     subnode="delay_drop_mustang_minus" descr="AKA Dropless TCP" />
+   <field name="fw_pager"             offset="0xe4d0.0"   size="0x40.0"     subnode="fw_pager" descr="used for FW/HW paging for security (in BF3/CX8+)" />
+   <field name="arm_domain"           offset="0xe510.0"   size="0x4.0"      subnode="arm_domain" descr="" />
++  <field name="tlp_channel_meta"     offset="0xe520.0"   size="0x10.0"     subnode="tlp_channel_meta" descr="TLP Channel Meta (ICMC: Scratchpad) for PCI FW communication" />
+   <field name="port_data"            offset="0xe640.0"   size="0x19c0.0"   subnode="carmel_port_db" descr="features database per port. Carmel plus" />
+ </node>
+ 
+diff --git a/include/cmdif_committer.h b/include/cmdif_committer.h
+index b1abbab172..e0f9754fb3 100644
+--- a/include/cmdif_committer.h
++++ b/include/cmdif_committer.h
+@@ -1819,6 +1819,10 @@ enum {
+                                                  CMDIF_MISSION_REFORMAT                 |\
+                                                  CMDIF_MISSION_G52_MODIFY_PCI_PARAMS    |\
+                                                  CMDIF_MISSION_G52_MODIFY_HOTPLUG_STATE)
++#define CREATE_TLP_EMU_CHANNEL_MISSIONS         (CMDIF_MISSION_STAGE_0                  |\
++                                                 CMDIF_MISSION_REFORMAT                 |\
++                                                 CMDIF_MISSION_ALLOC_NUM)
++#define DESTROY_TLP_EMU_CHANNEL_MISSIONS        (CREATE_TLP_EMU_CHANNEL_MISSIONS)
+ #endif
+ 
+ #if DEV_CARMEL_PLUS
+diff --git a/include/cmdif_tlp_emu.h b/include/cmdif_tlp_emu.h
+new file mode 100644
+index 0000000000..35bc75e63d
+--- /dev/null
++++ b/include/cmdif_tlp_emu.h
+@@ -0,0 +1,35 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2023-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
++ *
++ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
++ * property and proprietary rights in and to this material, related
++ * documentation and any modifications thereto. Any use, reproduction,
++ * disclosure or distribution of this material and related documentation
++ * without an express license agreement from NVIDIA CORPORATION or
++ * its affiliates is strictly prohibited.
++ */
++
++#ifndef _CMDIF_TLP_EMU_H
++#define _CMDIF_TLP_EMU_H
++
++#include "g_lib.h"
++#include "cmdif_committer.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++uint32 create_tlp_emu_channel(struct cmdx_t *cx);
++uint32 query_tlp_emu_channel(struct cmdx_t *cx);
++uint32 destroy_tlp_emu_channel(struct cmdx_t *cx);
++
++uint32 check_create_tlp_emu_channel_cmd(struct cmdif_hdr_t *hdr,
++                                        struct create_general_obj_in_t *input,
++                                        struct cmdif_ctx_t *ctx);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+\ No newline at end of file
+diff --git a/include/induced_ctx_table.h b/include/induced_ctx_table.h
+index c234e8214d..80dce16f80 100644
+--- a/include/induced_ctx_table.h
++++ b/include/induced_ctx_table.h
+@@ -596,7 +596,8 @@ typedef enum {
+     ICM_RES_FW_STE_META                        = 0x118,
+     ICM_RES_PROGCC_NP_BUFF                     = 0x119,
+     ICM_RES_HW_DPA_SCRATCHPAD                  = 0x120,
+-    //free                                     = 0x121..0x12f
++    ICM_RES_TLP_EMU_CHANNEL                    = 0xfc,  // Must be < 0x100 due to resource reference system limitations
++    //free                                     = 0x122..0x12f
+     ICM_RES_BSF4                               = 0x130,
+     RESERVED_FREELIST_INTERLACED_BSF4_01       = 0x131, //WIKI: Giga Freelist
+     RESERVED_FREELIST_INTERLACED_BSF4_02       = 0x132, //WIKI: Giga Freelist
+diff --git a/include/prm_enums.h b/include/prm_enums.h
+index f72ce64e12..4eb911a70b 100644
+--- a/include/prm_enums.h
++++ b/include/prm_enums.h
+@@ -170,6 +170,7 @@ typedef enum {
+     CMDIF_OBJ_TYPE_RDMA_CTRL                     = 0x53,
+     CMDIF_OBJ_TYPE_AUX_TASK_SERVICE              = 0x54,
+     CMDIF_OBJ_TYPE_PRT_CONFIG                    = 0x55,
++    CMDIF_OBJ_TYPE_TLP_EMU_CHANNEL               = 0x59,
+ /* LEGACY section */
+     CMDIF_OBJ_TYPE_MKEY                    = 0xFF01,
+     CMDIF_OBJ_TYPE_QP                      = 0xFF02,
+diff --git a/include/reformat_tlp_emu.h b/include/reformat_tlp_emu.h
+new file mode 100644
+index 0000000000..18ae33dce4
+--- /dev/null
++++ b/include/reformat_tlp_emu.h
+@@ -0,0 +1,34 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2023-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
++ *
++ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
++ * property and proprietary rights in and to this material, related
++ * documentation and any modifications thereto. Any use, reproduction,
++ * disclosure or distribution of this material and related documentation
++ * without an express license agreement from NVIDIA CORPORATION or
++ * its affiliates is strictly prohibited.
++ */
++
++/**
++ * @file reformat_tlp_emu.h
++ * @brief TLP EMU Channel reformat function declarations
++ */
++
++#ifndef _REFORMAT_TLP_EMU_H_
++#define _REFORMAT_TLP_EMU_H_
++
++#include "g_lib.h"
++#include "cmdif_committer.h"
++
++/**
++ * @brief Reformat TLP EMU Channel data between external and internal formats
++ *
++ * @param sw2hw Direction: 1 for software to hardware (external to internal),
++ *              0 for hardware to software (internal to external)
++ * @param external Pointer to the external TLP EMU Channel object structure (PRM format)
++ * @param internal Pointer to the internal TLP EMU Channel context structure (ICM format)
++ */
++void reformat_tlp_emu_channel(int sw2hw, struct tlp_emu_channel_t *external, struct tlp_emu_channel_ctx_t *internal);
++
++#endif /* _REFORMAT_TLP_EMU_H_ */
+\ No newline at end of file
+diff --git a/include/scratchpad.h b/include/scratchpad.h
+index 09ac6d41db..bbdcf43bbe 100644
+--- a/include/scratchpad.h
++++ b/include/scratchpad.h
+@@ -296,6 +296,7 @@ struct scratchpad2_bits* const Scratchpad2   =   (struct scratchpad2_t *) 0 ;
+ #define SP_counters_monitoring          (&SP_common->counters_monitoring)
+ #define SP_micro_apps                   (&SP_common->micro_apps)
+ #define SP_generic_emu                  (&SP_common->generic_emu)
++#define SP_tlp_channel_meta             (&ScratchpadPtr->tlp_channel_meta)
+ #define SP_tlp_cmpl                     (&SP_common->tlp_cmpl)
+ #define SP_pd_remote_port               (&SP_common->pd_remote_port)
+ #define SP_ztt                          (&SP_common->ztt)
+diff --git a/src/common/icm_res_bases_autogen.c b/src/common/icm_res_bases_autogen.c
+index 6739ef86db..07c1a6840b 100644
+--- a/src/common/icm_res_bases_autogen.c
++++ b/src/common/icm_res_bases_autogen.c
+@@ -220,9 +220,9 @@ case ICM_RES_FW_EMU_CTX:                           base=0x00003b43d0000000LL|HEP
+ case ICM_RES_FW_GEN_UAR_PLACE_HOLDER:              base=0x00003b43c8000000LL|HEP;           break;
+ case ICM_RES_FW_DMFS_HEADER_MODIFY_PATTERN:        base=0x00003b43c0000000LL|HEP;           break;
+ case ICM_RES_FW_PSV:                               base=0x00003b43bc000000LL|HEP;           break;
++case ICM_RES_FW_QP_ADP_RETRANS_CTX:                base=0x00003b43b8000000LL|HEP;           break;
+ case ICM_RES_FW_DMFS_MODIFY_HEADER_META:           base=0x00003b43b4000000LL|HEP;           break;
+ case ICM_RES_FW_SQ_SCHED_ELEMENT_CTX:              base=0x00003b43b0000000LL|HEP;           break;
+-case ICM_RES_FW_QP_ADP_RETRANS_CTX:                base=0x00003b43b8000000LL|HEP;           break;
+ case ICM_RES_FW_SW_ICM:                            base=0x00003b439e000000LL|HEP;           break;
+ case ICM_RES_FW_GVMI_LL:                           base=0x00003b4397000000LL|HEP;           break;
+ case ICM_RES_FW_VQOS_DISTLIST:                     base=0x00003b4396000000LL|HEP;           break;
+@@ -268,6 +268,7 @@ case ICM_RES_GENERIC_EMU_STATEFUL_REGION:          base=0x00002ffcfd000000LL;
+ case ICM_RES_NVME_EMU_BAR:                         base=0x00002ffcfb800000LL;               break;
+ case ICM_RES_FW_NVME_DBR:                          base=0x0000014000000000LL;               break;
+ case ICM_RES_HW_TOC:                               base=0x00002ffcf9c00000LL;               break;
++case ICM_RES_TLP_EMU_CHANNEL:                      base=0x00002ffcf9800000LL;               break;
+ case ICM_RES_GENERIC_EMU_DEV_CTX:                  base=0x00002ffcf9400000LL;               break;
+ case ICM_RES_HW_SXD_GVMI_RATE_LIMITER:             base=0x00002ffcf8e00000LL;               break;
+ case ICM_RES_ACE_CODE:                             base=0x00002ffcf8a00000LL;               break;
+diff --git a/src/common/icm_res_type.c b/src/common/icm_res_type.c
+index bf35ed4d4e..a349fb0a71 100644
+--- a/src/common/icm_res_type.c
++++ b/src/common/icm_res_type.c
+@@ -59,6 +59,7 @@ case ICM_RES_GENERIC_EMU_DEV_TYPE:          prefix=0x0000000000000000LL;offset=0
+ case ICM_RES_GENERIC_EMU_DEV_TYPE_OBJ:      prefix=0x0000000000000000LL;offset=0x000; log_entries=16; log_entry_b=4; break;
+ case ICM_RES_GENERIC_EMU_DEV_CTX:           prefix=0x0000000000000000LL;offset=0x000; log_entries=16; log_entry_b=6; no_map=1; inv_req=1; break;
+ case ICM_RES_GENERIC_EMU_STATEFUL_REGION:   prefix=0x0000000000000000LL;offset=0x000; log_entries=18; log_entry_b=6; no_map=1; inv_req=1; break;
++case ICM_RES_TLP_EMU_CHANNEL:               prefix=0x0000000000000000LL;offset=0x000; log_entries=16; log_entry_b=6; no_map=1; inv_req=1; break;
+ case ICM_RES_FW_Q_COUNTERS:                 prefix=0x0000000000000000LL;offset=0x000; log_entries=8; log_entry_b=LOG_FW_Q_CNTR_SIZE_B; log_volume_bytes=16; hep=1;
+                                                                                                                                             #if DEV_CARMEL_PLUS && DEV_MUSTANG_MINUS
+                                                                                                                                             types[0] = ICM_RES_FW_SHADOW_HW_COUNTERS_QP_RX;
+diff --git a/src/main/Makefile b/src/main/Makefile
+index 5aeb0e5a57..e6638c4d64 100644
+--- a/src/main/Makefile
++++ b/src/main/Makefile
+@@ -649,7 +649,9 @@ MODS-${MCONFIG_GENERIC_EMU} += cmdif_generic_emu\
+                                generic_emu_dev_type\
+                                generic_emu\
+                                generic_emu_bar_type\
+-                               generic_emu_stateful_region
++                               generic_emu_stateful_region\
++                               reformat_tlp_emu\
++                               cmdif_tlp_emu
+ MODS-${MCONFIG_SPDM} += spdm_cmd
+ MODS-${MCONFIG_RSHIM} += rshim
+ MODS-${MCONFIG_ACE} +=  micro_apps_ace_exceptions\
+diff --git a/src/main/cmdif_committer.c b/src/main/cmdif_committer.c
+index 5aac48ddcc..05c384ecba 100644
+--- a/src/main/cmdif_committer.c
++++ b/src/main/cmdif_committer.c
+@@ -34,6 +34,7 @@
+ #include "cmdif_upt.h"
+ #if IS_ENABLED(MCONFIG_GENERIC_EMU)
+ #include "cmdif_generic_emu.h"
++#include "cmdif_tlp_emu.h"
+ #endif
+ #include "cmdif_cmds_common.h"
+ #include "suspend_resume.h"
+@@ -76,6 +77,10 @@
+ #if IS_ENABLED(MCONFIG_ADVANCED_FEATURES)
+ 
+ static void create_cmd_op_prop(uint32 obj_type, struct cmdif_opcode_properties_t *pr) {
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_cmd_op_prop: Looking up CREATE handler for object type 0x%x", obj_type);
++    if (obj_type == CMDIF_OBJ_TYPE_TLP_EMU_CHANNEL) {
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_cmd_op_prop: Found TLP_EMU_CHANNEL (0x59) request!");
++    }
+     switch (obj_type) {
+     CASE_CMD(CMDIF_OBJ_TYPE_SW_ICM_OBJECT,           ADVANCED_FEATURES, create_sw_icm_object           ,       SW_ICM_OBJ_MISSIONS       ,       PAGES_R, 0        );
+     CASE_CMD(CMDIF_OBJ_TYPE_GENEVE_TLV_OPTION,       ADVANCED_FEATURES, create_geneve_tlv_option_object,       GENEVE_TLV_OPTION_MISSIONS,       PAGES_R, 0        );
+@@ -170,6 +175,7 @@ static void create_cmd_op_prop(uint32 obj_type, struct cmdif_opcode_properties_t
+     #if IS_ENABLED(MCONFIG_GENERIC_EMU)
+     CASE_CMD(CMDIF_OBJ_TYPE_GENERIC_EMU_DEV_TYPE,    GENERIC_EMU,       create_generic_emu_dev_type_object,    CREATE_GENERIC_EMU_DEV_TYPE_MISSIONS,  PAGES_R, DEVX_ALWD);
+     CASE_CMD(CMDIF_OBJ_TYPE_GENERIC_DEV_EMU,         GENERIC_EMU,       create_generic_dev_emu_object,         CREATE_GENERIC_DEV_EMU_MISSIONS,       PAGES_R, DEVX_ALWD);
++    CASE_CMD(CMDIF_OBJ_TYPE_TLP_EMU_CHANNEL,         GENERIC_EMU,       create_tlp_emu_channel,                CREATE_TLP_EMU_CHANNEL_MISSIONS,       PAGES_R, DEVX_ALWD);
+     #endif
+     #if DEV_MUSTANG_PLUS
+     CASE_CMD(CMDIF_OBJ_TYPE_PATH_SELECT,             DEFAULT,           create_path_select_object,             CREATE_PATH_SELECT_OBJ_MISSIONS,   PAGES_R, DEVX_ALWD);
+@@ -326,6 +332,7 @@ static void query_cmd_op_prop(uint32 obj_type, struct cmdif_opcode_properties_t
+     #if IS_ENABLED(MCONFIG_GENERIC_EMU)
+     CASE_CMD(CMDIF_OBJ_TYPE_GENERIC_EMU_DEV_TYPE,    GENERIC_EMU,       query_generic_emu_dev_type_object, 0, 0, DEVX_ALWD);
+     CASE_CMD(CMDIF_OBJ_TYPE_GENERIC_DEV_EMU,         GENERIC_EMU,       query_generic_dev_emu_object,      0, 0, DEVX_ALWD);
++    CASE_CMD(CMDIF_OBJ_TYPE_TLP_EMU_CHANNEL,         GENERIC_EMU,       query_tlp_emu_channel,             0, 0, DEVX_ALWD);
+     #endif
+     #if DEV_MUSTANG_PLUS
+     CASE_CMD(CMDIF_OBJ_TYPE_PATH_SELECT,             DEFAULT,           query_path_select_object,          0, 0, DEVX_ALWD);
+@@ -435,6 +442,7 @@ static void destroy_cmd_op_prop(uint32 obj_type, struct cmdif_opcode_properties_
+     #if IS_ENABLED(MCONFIG_GENERIC_EMU)
+     CASE_CMD(CMDIF_OBJ_TYPE_GENERIC_EMU_DEV_TYPE,    GENERIC_EMU,       destroy_generic_emu_dev_type_object,    DESTROY_GENERIC_EMU_DEV_TYPE_MISSIONS,  0, DEVX_ALWD);
+     CASE_CMD(CMDIF_OBJ_TYPE_GENERIC_DEV_EMU,         GENERIC_EMU,       destroy_generic_dev_emu_object,         DESTROY_GENERIC_DEV_EMU_MISSIONS,       0, DEVX_ALWD);
++    CASE_CMD(CMDIF_OBJ_TYPE_TLP_EMU_CHANNEL,         GENERIC_EMU,       destroy_tlp_emu_channel,                DESTROY_TLP_EMU_CHANNEL_MISSIONS,       0, DEVX_ALWD);
+     #endif
+     #if DEV_MUSTANG_PLUS
+     CASE_CMD(CMDIF_OBJ_TYPE_PATH_SELECT,             DEFAULT,           destroy_path_select_object,             DESTROY_PATH_SELECT_OBJ_MISSIONS,   0, DEVX_ALWD);
+diff --git a/src/main/cmdif_tlp_emu.c b/src/main/cmdif_tlp_emu.c
+new file mode 100644
+index 0000000000..6e8496d51f
+--- /dev/null
++++ b/src/main/cmdif_tlp_emu.c
+@@ -0,0 +1,331 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2023-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
++ *
++ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
++ * property and proprietary rights in and to this material, related
++ * documentation and any modifications thereto. Any use, reproduction,
++ * disclosure or distribution of this material and related documentation
++ * without an express license agreement from NVIDIA CORPORATION or
++ * its affiliates is strictly prohibited.
++ */
++
++/**
++ * @file tlp_emu_channel.c
++ * @brief TLP_EMU_CHANNEL object implementation
++ * 
++ * Syndrome Error Codes for TLP EMU Channel:
++ * 0xE1E101 - Invalid protocol mode (only mode 0 is supported)
++ * 0xE1E102 - Invalid queue size (must be between 1 and 64KB)
++ * 0xE1E103 - Invalid queue address (cannot be zero)
++ * 0xE1E104 - Failed to allocate object resource
++ * 0xE1E105 - Invalid object ID for query operation
++ * 0xE1E106 - Invalid object ID for destroy operation
++ * 0xE1E107 - Object is still being referenced and cannot be destroyed
++ * 0xE1E108 - VA to PA translation failed (check mkey validity and address mapping)
++ * 0xE1E109 - Invalid mkey (cannot be zero)
++ */
++
++#include "cmdif_tlp_emu.h"
++#include "reformat_tlp_emu.h"
++#include "icm_access_layer.h"
++#include "icmc_locking.h"
++#include "res_ref.h"
++#include "icm_ctx.h"
++#include "ace_fw.h"
++#include "scratchpad.h"
++#include "hal_host_mem_access.h"
++#include "events.h"
++
++
++
++/**
++ * @brief Internal function to destroy TLP_EMU_CHANNEL object resources for rollback
++ *
++ * @param gvmi GVMI ID
++ * @param ctx Command context
++ * @return void (used only for rollback, no return value needed)
++ */
++static uint32 _destroy_tlp_emu_channel(int gvmi, struct cmdif_ctx_t *ctx) {
++    if (CMDIF_MISSION_ALLOC_NUM & ~ctx->done_missions) {
++        /* Clear scratchpad TLP Channel Meta */
++        P_WRITE_FIELD(SP_tlp_channel_meta->queue_physical_addr.hi, 0);
++        P_WRITE_FIELD(SP_tlp_channel_meta->queue_physical_addr.lo, 0);
++        P_WRITE_FIELD(SP_tlp_channel_meta->pi, 0);
++        P_WRITE_FIELD(SP_tlp_channel_meta->credit, 0);
++        P_WRITE_FIELD(SP_tlp_channel_meta->valid, 0);
++        P_WRITE_FIELD(SP_tlp_channel_meta->owner_bit_sw, 0);
++        
++        /* Clear ICM data */
++        uint64 icmc_addr = ICM_RES_ADDR(ICM_RES_TLP_EMU_CHANNEL, gvmi, ctx->res_num);
++        struct tlp_emu_channel_ctx_t zero_ctx;
++        ZEROMEM_DW(&zero_ctx, sizeof(struct tlp_emu_channel_ctx_t) >> 2);
++        write_icm(sizeof(struct tlp_emu_channel_ctx_t), icmc_addr, (uint8 *)&zero_ctx);
++        
++        /* Deallocate the resource number */
++        uint64 res_num = ctx->res_num;
++        cmdif_dealloc_num(gvmi, ICM_RES_TLP_EMU_CHANNEL, &res_num, ctx);
++        ctx->done_missions |= CMDIF_MISSION_ALLOC_NUM;
++    }
++
++    if (CMDIF_MISSION_REFORMAT & ~ctx->done_missions) {
++        ctx->done_missions |= CMDIF_MISSION_REFORMAT;
++    }
++    
++    return CMDIF_NO_SYND;
++}
++
++/**
++ * @brief Check the input parameters for creating a TLP_EMU_CHANNEL
++ *
++ * @param gvmi GVMI ID
++ * @param hdr Command header
++ * @param input Input parameters
++ * @param ctx Command context
++ * @return uint32 Command status (0 for success, error code otherwise)
++ */
++uint32 check_create_tlp_emu_channel_cmd(struct cmdif_hdr_t *hdr,
++                                              struct create_general_obj_in_t *input,
++                                              struct cmdif_ctx_t *ctx) {
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "check_create_tlp_emu_channel_cmd: ENTRY");
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "check_create_tlp_emu_channel_cmd: protocol_mode=0x%x", input->obj_context.tlp_emu_channel.q_protocol_mode);
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "check_create_tlp_emu_channel_cmd: queue_size=0x%x", input->obj_context.tlp_emu_channel.q_size);
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "check_create_tlp_emu_channel_cmd: queue_addr=0x%llx", PRINT64(input->obj_context.tlp_emu_channel.q_addr));
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "check_create_tlp_emu_channel_cmd: mkey=0x%x", input->obj_context.tlp_emu_channel.q_mkey);
++           
++    if (input->obj_context.tlp_emu_channel.q_protocol_mode != 0) {
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "check_create_tlp_emu_channel_cmd: Invalid protocol mode 0x%x", 
++               input->obj_context.tlp_emu_channel.q_protocol_mode);
++        return CMDIF_STATUS(BAD_PARAM,0xE1E101); // check_create_tlp_emu_channel_cmd: Invalid protocol mode - only mode 0 is supported
++    }
++
++    if (input->obj_context.tlp_emu_channel.q_size == 0 || input->obj_context.tlp_emu_channel.q_size > (64 * 1024)) {
++        return CMDIF_STATUS(BAD_PARAM,0xE1E102); // check_create_tlp_emu_channel_cmd: Invalid queue size - must be between 1 and 64KB
++    }
++
++    if (input->obj_context.tlp_emu_channel.q_addr == 0) {
++        return CMDIF_STATUS(BAD_PARAM,0xE1E103); // check_create_tlp_emu_channel_cmd: Invalid queue address - cannot be zero
++    }
++
++    if (input->obj_context.tlp_emu_channel.q_mkey == 0) {
++        return CMDIF_STATUS(BAD_PARAM,0xE1E109); // check_create_tlp_emu_channel_cmd: Invalid mkey - cannot be zero
++    }
++
++    /* TODO:Check if the stride index is valid */
++
++    return CMDIF_NO_SYND; /* All checks passed */
++}
++
++/**
++ * @brief Create a TLP_EMU_CHANNEL object
++ *
++ * @param cx Command context
++ * @return uint32 Command status (0 for success, error code otherwise)
++ */
++uint32 create_tlp_emu_channel(struct cmdx_t *cx) {
++    CMD_DECLARATION(cx, int gvmi, struct cmdif_hdr_t *hdr, struct cmdif_ctx_t *ctx,
++                    struct hw_toc_t *toc, streamer_cmd_io *io);
++
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Function called - gvmi=0x%x", gvmi);
++
++    /* Handle rollback mission */
++    if (CMDIF_MISSION_ROLLBACK & ctx->done_missions) {
++        ctx->done_missions ^= DESTROY_TLP_EMU_CHANNEL_MISSIONS;
++        _destroy_tlp_emu_channel(gvmi, ctx);
++        ctx->done_missions ^= DESTROY_TLP_EMU_CHANNEL_MISSIONS;
++        return CMDIF_NO_SYND;
++    }
++
++    if (CMDIF_MISSION_REFORMAT & ~ctx->done_missions) {
++        struct create_general_obj_in_t input;
++        uint32 syndrome;
++
++        syndrome = (*io)(GLOBAL_READ, gvmi, hdr, 0, sizeof(input), (uint8 *)&input, NULL, toc->csum);
++        if (syndrome) return syndrome;
++
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Calling parameter check function");
++        syndrome = check_create_tlp_emu_channel_cmd(hdr, &input, ctx);
++        if (syndrome) {
++            FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Parameter check failed with syndrome=0x%x", syndrome);
++            return syndrome;
++        }
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Parameter check passed");
++
++        /* Use reformat function to convert external to internal format */
++        struct tlp_emu_channel_ctx_t tlp_icm_ctx;
++        ZEROMEM_DW(&tlp_icm_ctx, sizeof(struct tlp_emu_channel_ctx_t) >> 2);
++        reformat_tlp_emu_channel(SW2HW, &input.obj_context.tlp_emu_channel, &tlp_icm_ctx);
++
++        /* Store the converted data in the context special structure */
++        ctx->s.tlp_emu_channel.q_protocol_mode = tlp_icm_ctx.q_protocol_mode;
++        ctx->s.tlp_emu_channel.q_mkey = tlp_icm_ctx.q_mkey;
++        ctx->s.tlp_emu_channel.q_size = tlp_icm_ctx.q_size;
++        ctx->s.tlp_emu_channel.q_addr = tlp_icm_ctx.q_addr;
++        ctx->s.tlp_emu_channel.tlp_channel_stride_index = tlp_icm_ctx.tlp_channel_stride_index;
++
++        ctx->done_missions |= CMDIF_MISSION_REFORMAT;
++    }
++
++    if (CMDIF_MISSION_ALLOC_NUM & ~ctx->done_missions) {
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Starting resource allocation phase");
++        uint64 res_num = -1;
++        return_t ret = cmdif_alloc_num(gvmi, ctx, ICM_RES_TLP_EMU_CHANNEL, &res_num);
++        RETURN_IF_BUSY_OR_FAIL(ret, CMDIF_STATUS(EXCEED_LIM,0xE1E104));  // create_tlp_emu_channel: Failed to allocate object - resource limit exceeded
++        ctx->res_num = res_num;
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Resource allocated successfully - object_id=0x%x", (uint32)res_num);
++
++        /* Re-read input to get mkey for VA to PA translation */
++        struct create_general_obj_in_t input_alloc;
++        uint32 alloc_syndrome;
++        alloc_syndrome = (*io)(GLOBAL_READ, gvmi, hdr, 0, sizeof(input_alloc), (uint8 *)&input_alloc, NULL, toc->csum);
++        if (alloc_syndrome) return alloc_syndrome;
++
++        struct tlp_emu_channel_ctx_t tlp_icm_ctx;
++        ZEROMEM_DW(&tlp_icm_ctx, sizeof(struct tlp_emu_channel_ctx_t) >> 2);
++
++        /* Use data from context structure (saved during REFORMAT mission) */
++        tlp_icm_ctx.q_protocol_mode = ctx->s.tlp_emu_channel.q_protocol_mode;
++        tlp_icm_ctx.q_mkey = ctx->s.tlp_emu_channel.q_mkey;
++        tlp_icm_ctx.q_size = ctx->s.tlp_emu_channel.q_size;
++        tlp_icm_ctx.q_addr = ctx->s.tlp_emu_channel.q_addr;
++        tlp_icm_ctx.tlp_channel_stride_index = ctx->s.tlp_emu_channel.tlp_channel_stride_index;
++
++        tlp_icm_ctx.state = 1; /* Set to active state */
++        init_ref_count(CRE_TYPE_MISC, &tlp_icm_ctx.uid_ref, ctx->uid);
++
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: After init_ref_count");
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: ctx->uid=0x%x", ctx->uid);
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: tlp_icm_ctx.uid_ref.uid=0x%x", tlp_icm_ctx.uid_ref.uid);
++
++        uint64 icmc_addr = ICM_RES_ADDR(ICM_RES_TLP_EMU_CHANNEL, gvmi, ctx->res_num);
++        write_icm(sizeof(struct tlp_emu_channel_ctx_t), icmc_addr, (uint8 *)&tlp_icm_ctx);
++
++        /* Write TLP Channel Meta to scratchpad for PCI FW communication */
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Writing TLP Channel Meta to scratchpad - gvmi=0x%x, obj_id=0x%x", gvmi, ctx->res_num);
++        
++        /* Convert virtual address to physical address using mkey
++         * According to design diagram: QueuePhysicalAddr = getPA(QueueVirtualAddr) */
++        uint64 physical_addr;
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Starting VA to PA translation");
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: mkey=0x%x", tlp_icm_ctx.q_mkey);
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: va=0x%llx", PRINT64(tlp_icm_ctx.q_addr));
++        
++        uint32 va2pa_syndrome = translate_mkey_va2pa(gvmi, tlp_icm_ctx.q_mkey, tlp_icm_ctx.q_addr, &physical_addr);
++        if (va2pa_syndrome) {
++            /* VA to PA translation failed - this typically indicates:
++             * 1. Invalid mkey provided by client
++             * 2. Virtual address not properly mapped by the mkey
++             * 3. Memory region not accessible or permissions issue
++             * 4. Mkey refers to non-existent or invalid memory region
++             * Client should verify that the mkey is valid and covers the queue virtual address */
++            FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: VA to PA translation failed");
++            FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: gvmi=0x%x", gvmi);
++            FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: mkey=0x%x", tlp_icm_ctx.q_mkey);
++            FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: va=0x%llx", PRINT64(tlp_icm_ctx.q_addr));
++            FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: syndrome=0x%x", va2pa_syndrome);
++            return CMDIF_STATUS(BAD_RESOURCE,0xE1E108); // create_tlp_emu_channel: VA to PA translation failed - Invalid mkey or address mapping
++        }
++        
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: VA to PA translation successful");
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: va=0x%llx", PRINT64(tlp_icm_ctx.q_addr));
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: pa=0x%llx", PRINT64(physical_addr));
++        
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Writing scratchpad fields");
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: physical_addr=0x%llx", PRINT64(physical_addr));
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: queue_size=0x%x", tlp_icm_ctx.q_size);
++        
++        /* Write 64-bit physical address using P_WRITE_FIELD macro */
++        P_WRITE_FIELD(SP_tlp_channel_meta->queue_physical_addr.hi, (uint32)(physical_addr >> 32));
++        P_WRITE_FIELD(SP_tlp_channel_meta->queue_physical_addr.lo, (uint32)(physical_addr & 0xFFFFFFFF));
++        P_WRITE_FIELD(SP_tlp_channel_meta->pi, 0);
++        P_WRITE_FIELD(SP_tlp_channel_meta->credit, 1024);
++        P_WRITE_FIELD(SP_tlp_channel_meta->valid, 1);
++        P_WRITE_FIELD(SP_tlp_channel_meta->owner_bit_sw, 1);
++        
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: Scratchpad write completed - pi:0, credit:1024, valid:1, owner_bit_sw:1");
++
++        ctx->done_missions |= CMDIF_MISSION_ALLOC_NUM;
++    }
++
++    struct create_general_obj_out_t *out = (struct create_general_obj_out_t *)&hdr->output_inline;
++    out->general_obj_out_cmd_hdr.obj_id = ctx->res_num;
++
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "create_tlp_emu_channel: SUCCESS - gvmi=0x%x, obj_id=0x%x, protocol_mode=0x%x, queue_size=0x%x", gvmi, ctx->res_num, ctx->s.tlp_emu_channel.q_protocol_mode, ctx->s.tlp_emu_channel.q_size);
++
++    ctx->done_missions |= CMDIF_MISSION_STAGE_0;
++    return CMDIF_NO_SYND;
++}
++
++/**
++ * @brief Query a TLP_EMU_CHANNEL object
++ *
++ * @param cx Command context
++ * @return uint32 Command status (0 for success, error code otherwise)
++ */
++uint32 query_tlp_emu_channel(struct cmdx_t *cx) {
++    CMD_DECLARATION(cx, int gvmi, struct cmdif_hdr_t *hdr, struct cmdif_ctx_t *ctx,
++                    struct hw_toc_t *toc, streamer_cmd_io *io);
++
++    struct query_general_obj_in_t *query_input_hdr = (struct query_general_obj_in_t *)&hdr->input_inline;
++
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "query_tlp_emu_channel: Starting query - gvmi=0x%x, obj_id=0x%x", gvmi, query_input_hdr->general_obj_in_cmd_hdr.obj_id);
++
++    return_t status = res_ref_advanced_test_and_set_fire_arm(CRE_TYPE_MISC, gvmi, ICM_RES_TLP_EMU_CHANNEL, query_input_hdr->general_obj_in_cmd_hdr.obj_id, OBJECT_STATE_ARM, ctx);
++    if (status) {
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "query_tlp_emu_channel: Invalid object ID - obj_id=0x%x", query_input_hdr->general_obj_in_cmd_hdr.obj_id);
++        return CMDIF_STATUS(BAD_RES_STATE,0xE1E105); // query_tlp_emu_channel: Invalid object ID - object not found or not accessible
++    }
++
++    struct tlp_emu_channel_ctx_t tlp_ctx;
++    uint64 icmc_addr = ICM_RES_ADDR(ICM_RES_TLP_EMU_CHANNEL, gvmi, query_input_hdr->general_obj_in_cmd_hdr.obj_id);
++    read_icm(sizeof(struct tlp_emu_channel_ctx_t), icmc_addr, (uint8 *)&tlp_ctx);
++
++    /* Use reformat function to convert internal to external format */
++    struct tlp_emu_channel_t output;
++    reformat_tlp_emu_channel(HW2SW, &output, &tlp_ctx);
++
++    uint32 syndrome = (*io)(GLOBAL_WRITE, gvmi, hdr, SUB_STRUCT_OFFSET(query_general_obj_out_t, obj_context),
++                          sizeof(output), (uint8 *)&output, NULL, toc->csum);
++    if (syndrome) {
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "query_tlp_emu_channel: Failed to write output - syndrome=0x%x", syndrome);
++        return syndrome;
++    }
++
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "query_tlp_emu_channel: Query completed successfully - obj_id=0x%x, protocol_mode=0x%x, queue_size=0x%x", query_input_hdr->general_obj_in_cmd_hdr.obj_id, tlp_ctx.q_protocol_mode, tlp_ctx.q_size);
++
++    ctx->done_missions |= CMDIF_MISSION_STAGE_0;
++    return CMDIF_NO_SYND;
++}
++
++/**
++ * @brief Destroy a TLP_EMU_CHANNEL object
++ *
++ * @param cx Command context
++ * @return uint32 Command status (0 for success, error code otherwise)
++ */
++uint32 destroy_tlp_emu_channel(struct cmdx_t *cx) {
++    CMD_DECLARATION(cx, int gvmi, struct cmdif_hdr_t *hdr, struct cmdif_ctx_t *ctx,
++                    struct hw_toc_t *toc, streamer_cmd_io *io);
++    
++    struct destroy_general_obj_in_t *input = (struct destroy_general_obj_in_t *)&hdr->input_inline;
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "destroy_tlp_emu_channel: Starting destroy - gvmi=0x%x, obj_id=0x%x", gvmi, input->general_obj_in_cmd_hdr.obj_id);
++    
++    if ((CMDIF_MISSION_STAGE_0 | CMDIF_MISSION_ROLLBACK) & ctx->done_missions) {
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "destroy_tlp_emu_channel: Already completed - done_missions=0x%x", ctx->done_missions);
++        return CMDIF_NO_SYND;
++    }
++
++    ctx->res_num = input->general_obj_in_cmd_hdr.obj_id;
++    return_t status = res_ref_legacy_test_and_invalidate(CRE_TYPE_MISC, gvmi, ICM_RES_TLP_EMU_CHANNEL, ctx->res_num, ctx);
++    if (status) {
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "destroy_tlp_emu_channel: Resource validation failed - obj_id=0x%x, status=0x%x", ctx->res_num, status);
++        return CMDIF_STATUS(BAD_RESOURCE,0xE1E106); // destroy_tlp_emu_channel: Invalid object ID - object not found or not accessible
++    }
++
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "destroy_tlp_emu_channel: Resource validation passed, calling internal destroy");
++    _destroy_tlp_emu_channel(gvmi, ctx);
++    ctx->done_missions |= CMDIF_MISSION_STAGE_0;
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "destroy_tlp_emu_channel: SUCCESS - gvmi=0x%x, obj_id=0x%x", gvmi, ctx->res_num);
++    return CMDIF_NO_SYND;
++}
++
+diff --git a/src/main/reformat_tlp_emu.c b/src/main/reformat_tlp_emu.c
+new file mode 100644
+index 0000000000..3f9aa1714e
+--- /dev/null
++++ b/src/main/reformat_tlp_emu.c
+@@ -0,0 +1,36 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2023-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
++ *
++ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
++ * property and proprietary rights in and to this material, related
++ * documentation and any modifications thereto. Any use, reproduction,
++ * disclosure or distribution of this material and related documentation
++ * without an express license agreement from NVIDIA CORPORATION or
++ * its affiliates is strictly prohibited.
++ */
++
++/**
++ * @file reformat_tlp_emu.c
++ * @brief TLP EMU Channel reformat functions for sw2hw and hw2sw conversion
++ */
++
++#include "reformat_tlp_emu.h"
++
++/**
++ * @brief Reformat TLP EMU Channel data between external and internal formats
++ *
++ * @param sw2hw Direction: 1 for software to hardware (external to internal),
++ *              0 for hardware to software (internal to external)
++ * @param external Pointer to the external TLP EMU Channel object structure (PRM format)
++ * @param internal Pointer to the internal TLP EMU Channel context structure (ICM format)
++ */
++void reformat_tlp_emu_channel(int sw2hw, struct tlp_emu_channel_t *external, struct tlp_emu_channel_ctx_t *internal) {
++    /* Convert between external PRM format and internal ICM format using ASSIGN_VAL macro */
++    ASSIGN_VAL(sw2hw, external->q_protocol_mode, internal->q_protocol_mode);
++    ASSIGN_VAL(sw2hw, external->q_mkey, internal->q_mkey);
++    ASSIGN_VAL(sw2hw, external->q_size, internal->q_size);
++    ASSIGN_VAL(sw2hw, external->q_addr, internal->q_addr);
++    ASSIGN_VAL(sw2hw, external->tlp_channel_stride_index, internal->tlp_channel_stride_index);
++    /* Note: Internal management fields (uid_ref, state) are handled separately by firmware */
++}
+\ No newline at end of file

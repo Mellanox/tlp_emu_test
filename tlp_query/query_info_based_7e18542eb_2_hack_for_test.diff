@@ -1,0 +1,105 @@
+diff --git a/src/common/generic_emu.c b/src/common/generic_emu.c
+index 1a830300fa..566dfb4bd3 100644
+--- a/src/common/generic_emu.c
++++ b/src/common/generic_emu.c
+@@ -172,8 +172,10 @@ uint32 get_generic_emu_dev_type_idx_by_obj_id(uint32 gvmi, uint32 obj_id) {
+ }
+ 
+ void fill_generic_emu_function_info(int gvmi, struct generic_emulated_function_info_t *emu_info) {
++    FW_LOG(LOG_MOD_GENERIC_EMU, LOG_ERROR, "fill_generic_emu_function_info: gvmi=%d, setting vhca_id=%d", gvmi, gvmi);
+     emu_info->vhca_id = gvmi;
+     emu_info->pci_bdf = GVMI_2_BDF(gvmi);
++    FW_LOG(LOG_MOD_GENERIC_EMU, LOG_ERROR, "fill_generic_emu_function_info: gvmi=%d, pci_bdf=0x%x, vhca_id=%d", gvmi, emu_info->pci_bdf, emu_info->vhca_id);
+     emu_info->hotplug_function = IS_GVMI_VALID_DYNAMIC_PF(gvmi);
+     if (emu_info->hotplug_function) {
+         emu_info->pci_hotplug_state = READ_FMT_FIELD(PF_GVMI_2_TABLE_IX(gvmi), first_sf_hotplug_u.hotplug_st.pci_hotplug_state);
+@@ -183,6 +185,8 @@ void fill_generic_emu_function_info(int gvmi, struct generic_emulated_function_i
+     uint32 type_idx = get_generic_emu_dev_type_idx(gvmi);
+     get_generic_emu_dev_type(type_idx, &dev_type);
+     MEMCOPY(&dev_type.type_name, &emu_info->generic_pci_device_type_name, sizeof(dev_type.type_name));
++    FW_LOG(LOG_MOD_GENERIC_EMU, LOG_ERROR, "fill_generic_emu_function_info: FINAL gvmi=%d, vhca_id=%d, bdf=0x%x, type_idx=%d", 
++           gvmi, emu_info->vhca_id, emu_info->pci_bdf, type_idx);
+ }
+ 
+ int is_generic_emu_obj_event_requested(int emu_gvmi) {
+diff --git a/src/main/cmdif_checks_rdma.c b/src/main/cmdif_checks_rdma.c
+index 331cca3128..eff9c900df 100644
+--- a/src/main/cmdif_checks_rdma.c
++++ b/src/main/cmdif_checks_rdma.c
+@@ -769,7 +769,6 @@ uint32 check_query_emulated_function_info(int gvmi, struct query_emulated_functi
+         case PRM_EMULATION_OPMOD_VIRTIO_BLK_PF:  *dev_type = EMULATION_DEVICE_TYPE_VIRTIO_BLK;break;
+         case PRM_EMULATION_OPMOD_VIRTIO_FS_PF:   *dev_type = EMULATION_DEVICE_TYPE_VIRTIO_FS; break;
+         case PRM_EMULATION_OPMOD_GENERIC_PF:     *dev_type = EMULATION_DEVICE_TYPE_GENERIC;   break;
+-        case PRM_EMULATION_OPMOD_TLP_DEVICES:    *dev_type = EMULATION_DEVICE_TYPE_TLP;       break;
+         case PRM_EMULATION_OPMOD_VF: {
+             int pf_gvmi = vhca_id_to_gvmi(input->pf_vhca_id);
+             uint32 synd = check_query_emulated_vf(pf_gvmi);
+@@ -785,6 +784,13 @@ uint32 check_query_emulated_function_info(int gvmi, struct query_emulated_functi
+             }
+             break;
+         }
++        case PRM_EMULATION_OPMOD_TLP_DEVICES:    
++            // 临时hack: 让TLP_DEVICES返回GENERIC类型来测试
++            FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "TLP_DEVICES hack: gvmi=%d, opmod=0x%x -> using GENERIC", gvmi, input->op_mod);
++            FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "TLP_DEVICES query received: host_valid=%d, host_num=%d, pf_vhca_id=0x%x", 
++                   input->host_number_valid, input->host_number, input->pf_vhca_id);
++            *dev_type = EMULATION_DEVICE_TYPE_GENERIC;       
++            break;
+         default: fwassert(0x8A80, 0, LEGACY, "check_query_emulated_function_info: unsupported dev_type=%d", *dev_type);
+     }
+ 
+diff --git a/src/main/cmdif_cmds_rdma.c b/src/main/cmdif_cmds_rdma.c
+index 37b6a4030b..6186bc25da 100644
+--- a/src/main/cmdif_cmds_rdma.c
++++ b/src/main/cmdif_cmds_rdma.c
+@@ -3153,8 +3153,10 @@ uint32 query_nvmf_cc_response(struct cmdx_t *cx) {
+ 
+ 
+ static inline void fill_emulated_function_info(int gvmi, struct emulated_function_info_t *emu_info) {
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "fill_emulated_function_info: gvmi=%d, setting vhca_id=%d", gvmi, gvmi);
+     emu_info->vhca_id = gvmi;
+     emu_info->pci_bdf = GVMI_2_BDF(gvmi);
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "fill_emulated_function_info: gvmi=%d, pci_bdf=0x%x, vhca_id=%d", gvmi, emu_info->pci_bdf, emu_info->vhca_id);
+     emu_info->hotplug_function = IS_GVMI_VALID_DYNAMIC_PF(gvmi);
+     if (emu_info->hotplug_function) {
+         emu_info->pci_hotplug_state = READ_FMT_FIELD(PF_GVMI_2_TABLE_IX(gvmi), first_sf_hotplug_u.hotplug_st.pci_hotplug_state);
+@@ -3166,6 +3168,8 @@ static inline void fill_emulated_function_info(int gvmi, struct emulated_functio
+         emu_info->max_num_vfs_valid = 0;
+         emu_info->max_num_vfs = 0;
+     }
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "fill_emulated_function_info: FINAL gvmi=%d, vhca_id=%d, bdf=0x%x, hotplug=%d", 
++           gvmi, emu_info->vhca_id, emu_info->pci_bdf, emu_info->hotplug_function);
+ }
+ 
+ int get_emulated_vfs(int gvmi, int pf_gvmi) {
+@@ -3209,15 +3213,19 @@ static uint32 output_emulated_function_info(struct cmdx_t *cx,
+ 
+     if (is_generic_emu_dev(dev_type)) {
+         #if IS_ENABLED(MCONFIG_GENERIC_EMU)
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "output_emulated_function_info: Using GENERIC path for emu_gvmi=%d, dev_type=%d", emu_gvmi, dev_type);
+         struct generic_emulated_function_info_t *info = (struct generic_emulated_function_info_t *)(mailbox + *mailbox_offset);
+         fill_generic_emu_function_info(emu_gvmi, info);
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "output_emulated_function_info: GENERIC filled emu_gvmi=%d, info->vhca_id=%d", emu_gvmi, info->vhca_id);
+         #else
+         fwassert(0x85E1, 0, NORMAL, "Unexpected emulation device type %d", dev_type);
+         #endif
+     } else {
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "output_emulated_function_info: Using STANDARD path for emu_gvmi=%d, dev_type=%d", emu_gvmi, dev_type);
+         struct emulated_function_info_t *info = (struct emulated_function_info_t *)(mailbox + *mailbox_offset);
+         fill_emulated_function_info(emu_gvmi, info);
+         info->vf_exist = vf_exist;
++        FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "output_emulated_function_info: STANDARD filled emu_gvmi=%d, info->vhca_id=%d", emu_gvmi, info->vhca_id);
+     }
+     *mailbox_offset += func_info_len;
+     return CMDIF_NO_SYND;
+@@ -3225,8 +3233,10 @@ static uint32 output_emulated_function_info(struct cmdx_t *cx,
+ 
+ uint32 query_emulated_function_info(struct cmdx_t *cx) {
+     CMD_DECLARATION(cx, int gvmi, struct cmdif_hdr_t *hdr, struct cmdif_ctx_t *ctx, struct hw_toc_t *toc, streamer_cmd_io *io);
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "1111 query_emulated_function_info TLP_DEVICES gvmi=%d, -> using GENERIC", gvmi);
+     emulation_device_type_t dev_type                 = EMULATION_DEVICE_TYPE_INVALID;
+     struct query_emulated_functions_info_in_t *input = (struct query_emulated_functions_info_in_t *)&hdr->input_inline;
++    FW_LOG(LOG_MOD_CMD_IF, LOG_ERROR, "2222 query_emulated_function_info TLP_DEVICES gvmi=%d, opmod=0x%x -> using GENERIC", gvmi, input->op_mod);
+     uint32 syndrome = check_query_emulated_function_info(gvmi, input, &dev_type);
+     if (syndrome) return syndrome;
+ 

@@ -1,0 +1,150 @@
+commit e01ac70a233a9019fc5141fc98d77512fb91e077
+Author: Fuhui(Michael) Li <michaelli@nvidia.coom>
+Date:   Tue Jun 3 18:08:47 2025 +0300
+
+    Title:[Feature][CORE] <TLP_EMU> Add TLP device emulation support
+    
+    Description: 1. add QUERY_EMULATED_FUNCTIONS_INFO
+                   a. Add a new value for op_mod field: 0x7 TLP_DEVICES(PRM_EMULATION_OPMOD_TLP_PF)
+                   b. Upon success, the FW will return the vhca_id for these TLP_DEVICES
+    Change-Id: I5b06413cda94f82ff18554b948502eca74a74d6d
+
+diff --git a/include/multi_func_basic_types.h b/include/multi_func_basic_types.h
+index f3f8028f71..f27f44fffa 100644
+--- a/include/multi_func_basic_types.h
++++ b/include/multi_func_basic_types.h
+@@ -35,6 +35,7 @@ typedef enum pf_type {
+     PF_TYPE_VIRTIO_FS_EMU_PF   = 0x7,
+     PF_TYPE_GENERIC_EMU_PF     = 0x8,
+     PF_TYPE_DMA_PF             = 0x9,
++    PF_TYPE_TLP_EMU_PF         = 0xA,   // TLP Device Emulation PF
+ } pf_type_t;
+ 
+ #if DEV_GILBOA_PLUS
+diff --git a/include/multi_func_common.h b/include/multi_func_common.h
+index 7554aa1034..53c898eb33 100644
+--- a/include/multi_func_common.h
++++ b/include/multi_func_common.h
+@@ -1742,7 +1742,7 @@ int is_gvmi_ignored_for_smart_nic_ver(int gvmi);
+ #endif
+ 
+ #define IS_VIRTIO_EMU_ENABLED()            (IS_VIRTIO_NET_EMU_ENABLED() || IS_VIRTIO_BLK_EMU_ENABLED() || IS_VIRTIO_FS_EMU_ENABLED())
+-#define IS_DEVICE_EMU_ENABLED()            (IS_VIRTIO_EMU_ENABLED()     || IS_NVME_EMU_SUPPORTED())
++#define IS_DEVICE_EMU_ENABLED()            (IS_VIRTIO_EMU_ENABLED() || IS_NVME_EMU_SUPPORTED() || IS_TLP_EMU_ENABLED() || IS_GENERIC_EMU_ENABLED())
+ 
+ #if IS_ENABLED(MCONFIG_GENERIC_EMU)
+ #define IS_GENERIC_EMU_ENABLED()    (NV_CFG_P_READ_FIELD(NV_CFG_BOOT, global.emulation_pci_switch_conf.pci_switch))
+@@ -1752,6 +1752,14 @@ int is_gvmi_ignored_for_smart_nic_ver(int gvmi);
+ #define IS_GENERIC_EMU_SUPPORTED()  (0)
+ #endif
+ 
++#if IS_ENABLED(MCONFIG_TLP_EMU)
++#define IS_TLP_EMU_ENABLED()    (NV_CFG_P_READ_FIELD(NV_CFG_BOOT, global.emulation_tlp_conf.tlp_emu_enable))
++#define IS_TLP_EMU_SUPPORTED()  1
++#else
++#define IS_TLP_EMU_ENABLED()    (0)
++#define IS_TLP_EMU_SUPPORTED()  (0)
++#endif
++
+ static inline emulation_device_type_t pf_type_to_emu_dev_type(int pf_type) {
+     switch (pf_type) {
+     case PF_TYPE_VIRTIO_NET_EMU_PF : return EMULATION_DEVICE_TYPE_VIRTIO_NET;
+@@ -1759,6 +1767,7 @@ static inline emulation_device_type_t pf_type_to_emu_dev_type(int pf_type) {
+     case PF_TYPE_VIRTIO_FS_EMU_PF  : return EMULATION_DEVICE_TYPE_VIRTIO_FS;
+     case PF_TYPE_NVME_EMU_PF       : return EMULATION_DEVICE_TYPE_NVME;
+     case PF_TYPE_GENERIC_EMU_PF    : return EMULATION_DEVICE_TYPE_GENERIC;
++    case PF_TYPE_TLP_EMU_PF        : return EMULATION_DEVICE_TYPE_TLP;
+     default:
+         fwassert(0x8CD3, 0, INTERNAL, "The pf_type 0x%x is not an emulation type.", pf_type);
+         return EMULATION_DEVICE_TYPE_INVALID;
+@@ -1772,6 +1781,7 @@ static inline pf_type_t emu_dev_type_to_pf_type(emulation_device_type_t dev_type
+     case EMULATION_DEVICE_TYPE_VIRTIO_BLK: return PF_TYPE_VIRTIO_BLK_EMU_PF;
+     case EMULATION_DEVICE_TYPE_VIRTIO_FS:  return PF_TYPE_VIRTIO_FS_EMU_PF;
+     case EMULATION_DEVICE_TYPE_GENERIC:    return PF_TYPE_GENERIC_EMU_PF;
++    case EMULATION_DEVICE_TYPE_TLP:        return PF_TYPE_TLP_EMU_PF;
+     default:
+         fwassert(0x8559, 0, LEGACY, "Unexpected emulation device type %d", dev_type);
+         return PF_TYPE_INVALID;
+@@ -1803,6 +1813,13 @@ static inline int is_generic_emu_dev(emulation_device_type_t dev_type) {
+     return 0;
+ }
+ 
++static inline int is_tlp_emu_dev(emulation_device_type_t dev_type) {
++    #if IS_ENABLED(MCONFIG_TLP_EMU)
++    if (EMULATION_DEVICE_TYPE_TLP == dev_type) return 1;
++    #endif
++    return 0;
++}
++
+ static inline int is_upt_dev(emulation_device_type_t dev_type) {
+     #if IS_ENABLED(MCONFIG_UPT_EMU)
+     if (EMULATION_DEVICE_TYPE_UPT == dev_type) return 1;
+diff --git a/include/prm_enums.h b/include/prm_enums.h
+index f72ce64e12..89e3b9c46c 100644
+--- a/include/prm_enums.h
++++ b/include/prm_enums.h
+@@ -3656,6 +3656,7 @@ typedef enum {
+     PRM_EMULATION_OPMOD_GPU_PF               = 0x4,
+     PRM_EMULATION_OPMOD_VIRTIO_FS_PF         = 0x5,
+     PRM_EMULATION_OPMOD_GENERIC_PF           = 0x6,
++    PRM_EMULATION_OPMOD_TLP_DEVICES          = 0x7,
+ } prm_emulation_opmod_t;
+ 
+ typedef enum {
+@@ -3666,7 +3667,8 @@ typedef enum {
+     EMULATION_DEVICE_TYPE_VIRTIO_FS     =  3,
+     EMULATION_DEVICE_TYPE_UPT           =  5,
+     EMULATION_DEVICE_TYPE_GENERIC       =  6,
+-    EMULATION_DEVICE_TYPE_LAST          =  EMULATION_DEVICE_TYPE_GENERIC,
++    EMULATION_DEVICE_TYPE_TLP           =  7,
++    EMULATION_DEVICE_TYPE_LAST          =  EMULATION_DEVICE_TYPE_TLP,
+ } emulation_device_type_t;
+ 
+ typedef enum {
+diff --git a/src/common/virtio_emulator.c b/src/common/virtio_emulator.c
+index 5caba363ed..33b7a79c45 100644
+--- a/src/common/virtio_emulator.c
++++ b/src/common/virtio_emulator.c
+@@ -29,7 +29,7 @@
+ #include "flr.h"
+ 
+ COMPILE_TIME_ASSERT(assumption_on_virtio_q_ctx_size_broken, sizeof(struct virtio_bar_db_q_ctx_t) == (1 << (LOG_CACHE_LINE_SIZE - 1)));
+-COMPILE_TIME_ASSERT(check_there_is_enough_bits_for_dev_type, ONES32(sizeof(((struct virtio_bar_db_common_ctx_bits *)0)->dev_type)) > EMULATION_DEVICE_TYPE_LAST);
++COMPILE_TIME_ASSERT(check_there_is_enough_bits_for_dev_type, ONES32(sizeof(((struct virtio_bar_db_common_ctx_bits *)0)->dev_type)) >= EMULATION_DEVICE_TYPE_LAST);
+ COMPILE_TIME_ASSERT(check_there_is_enough_bits_for_num_queue, ONES32(sizeof(((struct virtio_bar_db_common_ctx_bits *)0)->num_queues)) >= (1 << LOG_VIRTIO_MAX_NUM_QUEUES_PER_DEVICE));
+ COMPILE_TIME_ASSERT(check_there_is_enough_bits_for_num_admin_queue, ONES32(sizeof(((struct virtio_bar_db_common_ctx_bits *)0)->admin_queue_num)) >= VIRTIO_MAX_ADMIN_Q_NUM());
+ 
+diff --git a/src/main/cmdif_checks_rdma.c b/src/main/cmdif_checks_rdma.c
+index 4644f90f92..331cca3128 100644
+--- a/src/main/cmdif_checks_rdma.c
++++ b/src/main/cmdif_checks_rdma.c
+@@ -769,6 +769,7 @@ uint32 check_query_emulated_function_info(int gvmi, struct query_emulated_functi
+         case PRM_EMULATION_OPMOD_VIRTIO_BLK_PF:  *dev_type = EMULATION_DEVICE_TYPE_VIRTIO_BLK;break;
+         case PRM_EMULATION_OPMOD_VIRTIO_FS_PF:   *dev_type = EMULATION_DEVICE_TYPE_VIRTIO_FS; break;
+         case PRM_EMULATION_OPMOD_GENERIC_PF:     *dev_type = EMULATION_DEVICE_TYPE_GENERIC;   break;
++        case PRM_EMULATION_OPMOD_TLP_DEVICES:    *dev_type = EMULATION_DEVICE_TYPE_TLP;       break;
+         case PRM_EMULATION_OPMOD_VF: {
+             int pf_gvmi = vhca_id_to_gvmi(input->pf_vhca_id);
+             uint32 synd = check_query_emulated_vf(pf_gvmi);
+@@ -779,6 +780,7 @@ uint32 check_query_emulated_function_info(int gvmi, struct query_emulated_functi
+                 case PF_TYPE_VIRTIO_BLK_EMU_PF: *dev_type = EMULATION_DEVICE_TYPE_VIRTIO_BLK; break;
+                 case PF_TYPE_VIRTIO_FS_EMU_PF:  *dev_type = EMULATION_DEVICE_TYPE_VIRTIO_FS;  break;
+                 case PF_TYPE_PORT_PF:           *dev_type = EMULATION_DEVICE_TYPE_UPT;        break;
++                case PF_TYPE_TLP_EMU_PF:        *dev_type = EMULATION_DEVICE_TYPE_TLP;        break;
+                 default:                         return CMDIF_STATUS(BAD_PARAM,0x475C7E);     break; // pf_gvmi is not emulation pf
+             }
+             break;
+diff --git a/src/main/hca_cap.c b/src/main/hca_cap.c
+index 20371b85b7..64b0eda352 100644
+--- a/src/main/hca_cap.c
++++ b/src/main/hca_cap.c
+@@ -2214,6 +2214,9 @@ int is_device_emulation_manager_cur_cap_sup(int gvmi, uint32 uctx_cap, emulation
+         case EMULATION_DEVICE_TYPE_GENERIC:
+             if (!IS_GENERIC_EMU_ENABLED())                  return 0;
+             break;
++        case EMULATION_DEVICE_TYPE_TLP:
++            if (!IS_TLP_EMU_ENABLED())                      return 0;
++            break;
+         default:
+             return 0;
+     }
